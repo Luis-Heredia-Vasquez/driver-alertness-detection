@@ -17,7 +17,8 @@ except Exception:
     HAS_CV2 = False
 
 try:
-    from src.preprocessing.landmark_extractor import FrameProcessor
+    from src.preprocessing.landmark_extractor import (
+        FrameProcessor, LEFT_EYE_INDICES, RIGHT_EYE_INDICES)
     HAS_LANDMARK_EXTRACTOR = True
 except Exception:
     HAS_LANDMARK_EXTRACTOR = False
@@ -136,6 +137,15 @@ def create_app():
                     metrics['confidence'] = min(1.0, max(0.0, avg_ear))
                     # Simple PERCLOS estimate
                     metrics['perclos'] = max(0.0, 1.0 - avg_ear) if avg_ear > 0 else 0.5
+                    # Eye landmark coordinates (normalized 0-1) for frontend overlay
+                    lm = features.landmarks
+                    if lm is not None and lm.shape[0] >= 468:
+                        metrics['landmarks_left_eye'] = [
+                            [float(lm[i][0]), float(lm[i][1])] for i in LEFT_EYE_INDICES
+                        ]
+                        metrics['landmarks_right_eye'] = [
+                            [float(lm[i][0]), float(lm[i][1])] for i in RIGHT_EYE_INDICES
+                        ]
                 except Exception as e:
                     logger.error(f'Error processing landmarks: {e}')
                     metrics['confidence'] = 0.5

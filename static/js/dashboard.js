@@ -108,16 +108,6 @@ class DashboardManager {
                         tension: 0.4,
                         fill: false
                     },
-                    {
-                        label: 'Threshold',
-                        data: [],
-                        borderColor: '#ef4444',
-                        borderWidth: 2,
-                        borderDash: [5, 5],
-                        pointRadius: 0,
-                        tension: 0,
-                        fill: false
-                    }
                 ]
             },
             options: {
@@ -229,16 +219,13 @@ class DashboardManager {
         this.log('Monitoring stopped');
     }
 
-    // Runs at 5 Hz — captures the current canvas frame and sends to the backend
+    // Runs at 10 Hz — captures and sends every frame to the backend
     captureLoop = async () => {
         if (!this.isMonitoring) return;
 
         try {
             const imageData = this.canvas.toDataURL('image/jpeg', 0.8);
-
-            if (this.frameCount % 4 === 0) {
-                this.sendPredictionRequest(imageData);
-            }
+            this.sendPredictionRequest(imageData);
 
             this.frameCount++;
             const now = Date.now();
@@ -254,7 +241,7 @@ class DashboardManager {
             this.log(`Capture error: ${err.message}`);
         }
 
-        setTimeout(this.captureLoop, 200);
+        setTimeout(this.captureLoop, 100);
     };
 
     async sendPredictionRequest(imageData) {
@@ -341,37 +328,85 @@ class DashboardManager {
     updateCharts(earLeft, earRight, confidence) {
         const label = new Date().toLocaleTimeString();
 
-        // EAR chart — push new values, keep max 60 entries
         this.earChart.data.labels.push(label);
         this.earChart.data.datasets[0].data.push(earLeft);
         this.earChart.data.datasets[1].data.push(earRight);
-        this.earChart.data.datasets[2].data.push(this.earThreshold);
         if (this.earChart.data.labels.length > 60) {
             this.earChart.data.labels.shift();
-            this.earChart.data.datasets[0].data.shift();
-            this.earChart.data.datasets[1].data.shift();
-            this.earChart.data.datasets[2].data.shift();
+            this.earChart.data.datasets.forEach(d => d.data.shift());
         }
         this.earChart.update();
 
-        // Confidence chart — same pattern
         this.confidenceChart.data.labels.push(label);
         this.confidenceChart.data.datasets[0].data.push(confidence);
         if (this.confidenceChart.data.labels.length > 60) {
             this.confidenceChart.data.labels.shift();
-            this.confidenceChart.data.datasets[0].data.shift();
+            this.confidenceChart.data.datasets.forEach(d => d.data.shift());
         }
         this.confidenceChart.update();
     }
 
     drawOverlay(result) {
-        // Small dark box so the text is legible over any video background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.fillRect(5, 5, 150, 65);
-        this.ctx.fillStyle = '#00d4ff';
-        this.ctx.font = 'bold 14px "Courier New"';
-        this.ctx.fillText(`EAR: ${(result.ear_left || 0).toFixed(3)}`, 12, 28);
-        this.ctx.fillText(`MAR: ${(result.mar || 0).toFixed(3)}`, 12, 52);
+        const W = this.canvas.width;
+        const H = this.canvas.height;
+        const ctx = this.ctx;
+        const earLeft = result.ear_left || 0;
+        const earRight = result.ear_right || 0;
+
+        // Draw eye landmark polygons and dots
+        const drawEyeRegion = (pts, ear) => {
+            if (!pts || pts.length === 0) return;
+            const belowThreshold = ear < this.earThreshold;
+
+            ctx.beginPath();
+            ctx.moveTo(pts[0][0] * W, pts[0][1] * H);
+            for (let i = 1; i < pts.length; i++) {
+                ctx.lineTo(pts[i][0] * W, pts[i][1] * H);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = belowThreshold ? '#ef4444' : '#00d4ff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = '#00ff00';
+            for (const [nx, ny] of pts) {
+                ctx.beginPath();
+                ctx.arc(nx * W, ny * H, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        };
+
+        if (result.landmarks_left_eye)  drawEyeRegion(result.landmarks_left_eye,  earLeft);
+        if (result.landmarks_right_eye) drawEyeRegion(result.landmarks_right_eye, earRight);
+
+        // EAR gauge bar at bottom-left: shows current avg EAR vs threshold
+        const avgEar = (earLeft + earRight) / 2;
+        const gaugeX = 10;
+        const gaugeY = H - 24;
+        const gaugeW = 130;
+        const earFrac   = Math.min(avgEar / 0.5, 1.0);
+        const threshFrac = Math.min(this.earThreshold / 0.5, 1.0);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(gaugeX - 2, gaugeY - 2, gaugeW + 4, 16);
+        ctx.fillStyle = avgEar < this.earThreshold ? '#ef4444' : '#10b981';
+        ctx.fillRect(gaugeX, gaugeY, gaugeW * earFrac, 12);
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(gaugeX + gaugeW * threshFrac - 1, gaugeY - 2, 2, 16);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px "Courier New"';
+        ctx.fillText(`EAR ${avgEar.toFixed(2)} thr:${this.earThreshold}`, gaugeX + gaugeW + 6, gaugeY + 11);
+
+        // Info box top-left
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(5, 5, 155, 70);
+        ctx.font = 'bold 13px "Courier New"';
+        ctx.fillStyle = earLeft  < this.earThreshold ? '#ef4444' : '#00d4ff';
+        ctx.fillText(`L-EAR: ${earLeft.toFixed(3)}`,  10, 25);
+        ctx.fillStyle = earRight < this.earThreshold ? '#ef4444' : '#7c3aed';
+        ctx.fillText(`R-EAR: ${earRight.toFixed(3)}`, 10, 45);
+        ctx.fillStyle = '#a0aac0';
+        ctx.fillText(`MAR:   ${(result.mar || 0).toFixed(3)}`, 10, 65);
     }
 
     updateStatsLoop = () => {
