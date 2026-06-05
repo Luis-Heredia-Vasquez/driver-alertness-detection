@@ -1,0 +1,8 @@
+Flask>=2.0.0
+PyYAML>=6.0
+numpy>=1.21.0
+opencv-python>=4.5.0.68
+# Optional ML libs (not required for tests & basic server): torch, torchvision, tensorflow, mediapipe
+scikit-learn>=1.0.0
+pandas>=1.3.0
+gunicorn>=20.1.0
