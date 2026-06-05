@@ -597,7 +597,7 @@ MIT — see [LICENSE](LICENSE).
 
 <div align="center">
 
-Built by **Luis Heredia** · Computer Science · Pitzer College
+Built by **Luis Heredia** · Data Science · Pitzer College
 · [lheredia@students.pitzer.edu](mailto:lheredia@students.pitzer.edu)
 
 </div>
