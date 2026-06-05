@@ -15,13 +15,8 @@ class DashboardManager {
         this.lastFrameTime = Date.now();
         this.fps = 0;
 
-        // Data buffers
-        this.timestamps = [];          // Date.now() values
-        this.earHistory = [];          // avgEar — used for alert logic
-        this.earLeftHistory = [];
-        this.earRightHistory = [];
-        this.confidenceHistory = [];
-        this.perclosHistory = [];
+        // earHistory kept for alert logic; charts manage their own labels/data
+        this.earHistory = [];
         this.maxHistorySize = 300;
 
         // Statistics
@@ -75,29 +70,10 @@ class DashboardManager {
     }
 
     initializeCharts() {
-        const now = Date.now();
-
-        const xAxisConfig = {
-            type: 'linear',
-            min: now,
-            max: now + 60000,
-            grid: { color: 'rgba(58, 69, 96, 0.2)' },
-            ticks: {
-                color: '#a0aac0',
-                maxTicksLimit: 6,
-                callback: (value) => {
-                    const d = new Date(value);
-                    return d.getHours().toString().padStart(2, '0') + ':' +
-                           d.getMinutes().toString().padStart(2, '0') + ':' +
-                           d.getSeconds().toString().padStart(2, '0');
-                }
-            }
-        };
-
         const commonOptions = {
+            animation: false,
             responsive: true,
             maintainAspectRatio: false,
-            animation: false,
             plugins: {
                 legend: {
                     labels: {
@@ -112,26 +88,25 @@ class DashboardManager {
         this.earChart = new Chart(earCtx, {
             type: 'line',
             data: {
+                labels: [],
                 datasets: [
                     {
                         label: 'Left EAR',
                         data: [],
                         borderColor: '#00d4ff',
-                        backgroundColor: 'rgba(0, 212, 255, 0.1)',
                         borderWidth: 2,
                         pointRadius: 0,
-                        tension: 0.3,
-                        fill: true
+                        tension: 0.4,
+                        fill: false
                     },
                     {
                         label: 'Right EAR',
                         data: [],
                         borderColor: '#7c3aed',
-                        backgroundColor: 'rgba(124, 58, 237, 0.1)',
                         borderWidth: 2,
                         pointRadius: 0,
-                        tension: 0.3,
-                        fill: true
+                        tension: 0.4,
+                        fill: false
                     },
                     {
                         label: 'Threshold',
@@ -148,13 +123,8 @@ class DashboardManager {
             options: {
                 ...commonOptions,
                 scales: {
-                    x: xAxisConfig,
-                    y: {
-                        min: 0,
-                        max: 0.5,
-                        grid: { color: 'rgba(58, 69, 96, 0.2)' },
-                        ticks: { color: '#a0aac0' }
-                    }
+                    x: { display: false },
+                    y: { min: 0, max: 0.5 }
                 }
             }
         });
@@ -163,29 +133,24 @@ class DashboardManager {
         this.confidenceChart = new Chart(confCtx, {
             type: 'line',
             data: {
+                labels: [],
                 datasets: [
                     {
                         label: 'Confidence',
                         data: [],
                         borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
                         borderWidth: 2,
                         pointRadius: 0,
-                        tension: 0.3,
-                        fill: true
+                        tension: 0.4,
+                        fill: false
                     }
                 ]
             },
             options: {
                 ...commonOptions,
                 scales: {
-                    x: xAxisConfig,
-                    y: {
-                        min: 0,
-                        max: 1.0,
-                        grid: { color: 'rgba(58, 69, 96, 0.2)' },
-                        ticks: { color: '#a0aac0' }
-                    }
+                    x: { display: false },
+                    y: { min: 0, max: 1.0 }
                 }
             }
         });
@@ -229,20 +194,12 @@ class DashboardManager {
             this.confidenceValues = [];
             this.perclosValues = [];
             this.earHistory = [];
-            this.earLeftHistory = [];
-            this.earRightHistory = [];
-            this.confidenceHistory = [];
-            this.perclosHistory = [];
-            this.timestamps = [];
             this.lastResult = null;
 
-            // Reset chart x-axis window to start from now
-            const now = Date.now();
-            this.earChart.options.scales.x.min = now;
-            this.earChart.options.scales.x.max = now + 60000;
-            this.confidenceChart.options.scales.x.min = now;
-            this.confidenceChart.options.scales.x.max = now + 60000;
+            // Clear chart data for fresh session
+            this.earChart.data.labels = [];
             this.earChart.data.datasets.forEach(ds => { ds.data = []; });
+            this.confidenceChart.data.labels = [];
             this.confidenceChart.data.datasets.forEach(ds => { ds.data = []; });
 
             this.startBtn.disabled = true;
@@ -333,27 +290,15 @@ class DashboardManager {
         this.marEl.textContent = mar.toFixed(3);
         this.perclosEl.textContent = (perclos * 100).toFixed(1) + '%';
 
-        const ts = Date.now();
-        this.timestamps.push(ts);
         this.earHistory.push(avgEar);
-        this.earLeftHistory.push(earLeft);
-        this.earRightHistory.push(earRight);
-        this.confidenceHistory.push(confidence);
-        this.perclosHistory.push(perclos);
         this.confidenceValues.push(confidence);
         this.perclosValues.push(perclos);
-
-        if (this.timestamps.length > this.maxHistorySize) {
-            this.timestamps.shift();
+        if (this.earHistory.length > this.maxHistorySize) {
             this.earHistory.shift();
-            this.earLeftHistory.shift();
-            this.earRightHistory.shift();
-            this.confidenceHistory.shift();
-            this.perclosHistory.shift();
         }
 
         this.lastResult = result;
-        this.updateCharts();
+        this.updateCharts(earLeft, earRight, confidence);
         this.updateAlertStatus(avgEar, mar);
     }
 
@@ -393,32 +338,30 @@ class DashboardManager {
         this.alertCountEl.textContent = this.alertCount;
     }
 
-    updateCharts() {
-        const now = Date.now();
-        const windowMs = 60000;
+    updateCharts(earLeft, earRight, confidence) {
+        const label = new Date().toLocaleTimeString();
 
-        // Slide the x-axis window so recent data is always visible
-        this.earChart.options.scales.x.min = now - windowMs;
-        this.earChart.options.scales.x.max = now;
-        this.confidenceChart.options.scales.x.min = now - windowMs;
-        this.confidenceChart.options.scales.x.max = now;
+        // EAR chart — push new values, keep max 60 entries
+        this.earChart.data.labels.push(label);
+        this.earChart.data.datasets[0].data.push(earLeft);
+        this.earChart.data.datasets[1].data.push(earRight);
+        this.earChart.data.datasets[2].data.push(this.earThreshold);
+        if (this.earChart.data.labels.length > 60) {
+            this.earChart.data.labels.shift();
+            this.earChart.data.datasets[0].data.shift();
+            this.earChart.data.datasets[1].data.shift();
+            this.earChart.data.datasets[2].data.shift();
+        }
+        this.earChart.update();
 
-        // Build {x, y} point arrays for linear axis
-        const earLeftData  = this.timestamps.map((ts, i) => ({ x: ts, y: this.earLeftHistory[i] }));
-        const earRightData = this.timestamps.map((ts, i) => ({ x: ts, y: this.earRightHistory[i] }));
-        const thresholdData = [
-            { x: now - windowMs, y: this.earThreshold },
-            { x: now,            y: this.earThreshold }
-        ];
-        const confData = this.timestamps.map((ts, i) => ({ x: ts, y: this.confidenceHistory[i] }));
-
-        this.earChart.data.datasets[0].data = earLeftData;
-        this.earChart.data.datasets[1].data = earRightData;
-        this.earChart.data.datasets[2].data = thresholdData;
-        this.earChart.update('none');
-
-        this.confidenceChart.data.datasets[0].data = confData;
-        this.confidenceChart.update('none');
+        // Confidence chart — same pattern
+        this.confidenceChart.data.labels.push(label);
+        this.confidenceChart.data.datasets[0].data.push(confidence);
+        if (this.confidenceChart.data.labels.length > 60) {
+            this.confidenceChart.data.labels.shift();
+            this.confidenceChart.data.datasets[0].data.shift();
+        }
+        this.confidenceChart.update();
     }
 
     drawOverlay(result) {
