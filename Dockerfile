@@ -13,7 +13,8 @@ WORKDIR /build
 # System packages required to compile opencv-python and mediapipe wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        libgl1-mesa-glx \
+        libgl1 \
+        libgl1-mesa-dri \
         libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,7 +29,8 @@ FROM python:3.11-slim AS runtime
 
 # Minimal runtime system libraries (OpenCV needs libGL / libGLib at run time)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgl1-mesa-glx \
+        libgl1 \
+        libgl1-mesa-dri \
         libglib2.0-0 \
         curl \
     && rm -rf /var/lib/apt/lists/*

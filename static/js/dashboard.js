@@ -44,7 +44,7 @@ class DashboardManager {
     }
 
     initializeUI() {
-        this.video = document.getElementById('webcam');
+        this.video = null; // created dynamically in start()
         this.canvas = document.getElementById('overlay');
         this.ctx = this.canvas.getContext('2d');
 
@@ -194,19 +194,34 @@ class DashboardManager {
     async start() {
         try {
             this.log('Starting monitoring...');
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: 640, height: 480 }
+
+            // Create video element in JS — does not need to be in the DOM
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            this.video = video;
+
+            navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+                video.srcObject = stream;
+                video.play();
+                video.addEventListener('playing', () => {
+                    this.canvas.width = video.videoWidth || 640;
+                    this.canvas.height = video.videoHeight || 480;
+                    this.log(`Video playing at ${this.canvas.width}x${this.canvas.height}`);
+
+                    const drawFrame = () => {
+                        if (!this.isMonitoring) return;
+                        this.ctx.drawImage(video, 0, 0, this.canvas.width, this.canvas.height);
+                        if (this.lastResult) this.drawOverlay(this.lastResult);
+                        this.drawRaf = requestAnimationFrame(drawFrame);
+                    };
+                    drawFrame();
+                });
+            }).catch(err => {
+                this.log(`Camera error: ${err.message}`);
+                alert('Failed to access webcam: ' + err.message);
             });
-
-            this.video.srcObject = stream;
-
-            // Only start drawing once the video is genuinely rendering frames
-            this.video.addEventListener('playing', () => {
-                this.canvas.width = this.video.videoWidth || 640;
-                this.canvas.height = this.video.videoHeight || 480;
-                this.log(`Video playing at ${this.canvas.width}x${this.canvas.height}`);
-                this.drawLoop();
-            }, { once: true });
 
             this.isMonitoring = true;
             this.sessionStart = Date.now();
@@ -256,18 +271,6 @@ class DashboardManager {
         this.setAlertStatus('idle', 'System stopped');
         this.log('Monitoring stopped');
     }
-
-    // Runs at display refresh rate — draws the video frame then any overlay text
-    drawLoop = () => {
-        if (!this.isMonitoring) return;
-        if (this.video.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA) {
-            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-            if (this.lastResult) {
-                this.drawOverlay(this.lastResult);
-            }
-        }
-        this.drawRaf = requestAnimationFrame(this.drawLoop);
-    };
 
     // Runs at 5 Hz — captures the current canvas frame and sends to the backend
     captureLoop = async () => {
