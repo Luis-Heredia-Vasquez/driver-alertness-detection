@@ -6,20 +6,23 @@
 class DashboardManager {
     constructor() {
         this.isMonitoring = false;
-        this.webcam = null;
+        this.video = null;
         this.canvas = null;
         this.ctx = null;
-        this.video = null;
+        this.drawRaf = null;
+        this.lastResult = null;
         this.frameCount = 0;
         this.lastFrameTime = Date.now();
         this.fps = 0;
 
-        // Data buffers (last 60 seconds of data)
-        this.earHistory = [];
+        // Data buffers
+        this.timestamps = [];          // Date.now() values
+        this.earHistory = [];          // avgEar — used for alert logic
+        this.earLeftHistory = [];
+        this.earRightHistory = [];
         this.confidenceHistory = [];
         this.perclosHistory = [];
-        this.timestamps = [];
-        this.maxHistorySize = 300; // 60s @ 5Hz
+        this.maxHistorySize = 300;
 
         // Statistics
         this.sessionStart = null;
@@ -35,7 +38,7 @@ class DashboardManager {
         // Thresholds
         this.earThreshold = 0.2;
         this.drowsyThreshold = 0.3;
-        this.microsleepThreshold = 3; // frames below earThreshold
+        this.microsleepThreshold = 3;
 
         this.initializeUI();
     }
@@ -45,7 +48,6 @@ class DashboardManager {
         this.canvas = document.getElementById('overlay');
         this.ctx = this.canvas.getContext('2d');
 
-        // UI elements
         this.startBtn = document.getElementById('startBtn');
         this.stopBtn = document.getElementById('stopBtn');
         this.alertBanner = document.getElementById('alertBanner');
@@ -54,62 +56,62 @@ class DashboardManager {
         this.fpsCounter = document.getElementById('fpsCounter');
         this.frameCounter = document.getElementById('frameCounter');
 
-        // Metrics
         this.earLeftEl = document.getElementById('earLeft');
         this.earRightEl = document.getElementById('earRight');
         this.marEl = document.getElementById('mar');
         this.perclosEl = document.getElementById('perclos');
 
-        // Stats
         this.durationEl = document.getElementById('sessionDuration');
         this.alertCountEl = document.getElementById('alertCount');
         this.avgConfidenceEl = document.getElementById('avgConfidence');
         this.avgPerclosEl = document.getElementById('avgPerclos');
 
-        // Debug
         this.debugOutput = document.getElementById('debugOutput');
 
-        // Event listeners
         this.startBtn.addEventListener('click', () => this.start());
         this.stopBtn.addEventListener('click', () => this.stop());
 
-        // Initialize charts
         this.initializeCharts();
     }
 
     initializeCharts() {
-        const chartConfig = {
-            type: 'line',
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: '#a0aac0',
-                            font: { family: "'Courier New', monospace" }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(58, 69, 96, 0.2)' },
-                        ticks: { color: '#a0aac0' }
-                    },
-                    y: {
-                        grid: { color: 'rgba(58, 69, 96, 0.2)' },
-                        ticks: { color: '#a0aac0' }
+        const now = Date.now();
+
+        const xAxisConfig = {
+            type: 'linear',
+            min: now,
+            max: now + 60000,
+            grid: { color: 'rgba(58, 69, 96, 0.2)' },
+            ticks: {
+                color: '#a0aac0',
+                maxTicksLimit: 6,
+                callback: (value) => {
+                    const d = new Date(value);
+                    return d.getHours().toString().padStart(2, '0') + ':' +
+                           d.getMinutes().toString().padStart(2, '0') + ':' +
+                           d.getSeconds().toString().padStart(2, '0');
+                }
+            }
+        };
+
+        const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#a0aac0',
+                        font: { family: "'Courier New', monospace" }
                     }
                 }
             }
         };
 
-        // EAR Chart
         const earCtx = document.getElementById('earChart').getContext('2d');
         this.earChart = new Chart(earCtx, {
-            ...chartConfig,
+            type: 'line',
             data: {
-                labels: [],
                 datasets: [
                     {
                         label: 'Left EAR',
@@ -118,6 +120,7 @@ class DashboardManager {
                         backgroundColor: 'rgba(0, 212, 255, 0.1)',
                         borderWidth: 2,
                         pointRadius: 0,
+                        tension: 0.3,
                         fill: true
                     },
                     {
@@ -127,27 +130,39 @@ class DashboardManager {
                         backgroundColor: 'rgba(124, 58, 237, 0.1)',
                         borderWidth: 2,
                         pointRadius: 0,
+                        tension: 0.3,
                         fill: true
                     },
                     {
                         label: 'Threshold',
                         data: [],
                         borderColor: '#ef4444',
-                        borderWidth: 1,
+                        borderWidth: 2,
                         borderDash: [5, 5],
                         pointRadius: 0,
+                        tension: 0,
                         fill: false
                     }
                 ]
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    x: xAxisConfig,
+                    y: {
+                        min: 0,
+                        max: 0.5,
+                        grid: { color: 'rgba(58, 69, 96, 0.2)' },
+                        ticks: { color: '#a0aac0' }
+                    }
+                }
             }
         });
 
-        // Confidence Chart
         const confCtx = document.getElementById('confidenceChart').getContext('2d');
         this.confidenceChart = new Chart(confCtx, {
-            ...chartConfig,
+            type: 'line',
             data: {
-                labels: [],
                 datasets: [
                     {
                         label: 'Confidence',
@@ -156,9 +171,22 @@ class DashboardManager {
                         backgroundColor: 'rgba(16, 185, 129, 0.1)',
                         borderWidth: 2,
                         pointRadius: 0,
+                        tension: 0.3,
                         fill: true
                     }
                 ]
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    x: xAxisConfig,
+                    y: {
+                        min: 0,
+                        max: 1.0,
+                        grid: { color: 'rgba(58, 69, 96, 0.2)' },
+                        ticks: { color: '#a0aac0' }
+                    }
+                }
             }
         });
     }
@@ -171,10 +199,14 @@ class DashboardManager {
             });
 
             this.video.srcObject = stream;
-            this.video.onloadedmetadata = () => {
-                this.canvas.width = this.video.videoWidth;
-                this.canvas.height = this.video.videoHeight;
-            };
+
+            // Only start drawing once the video is genuinely rendering frames
+            this.video.addEventListener('playing', () => {
+                this.canvas.width = this.video.videoWidth || 640;
+                this.canvas.height = this.video.videoHeight || 480;
+                this.log(`Video playing at ${this.canvas.width}x${this.canvas.height}`);
+                this.drawLoop();
+            }, { once: true });
 
             this.isMonitoring = true;
             this.sessionStart = Date.now();
@@ -182,9 +214,21 @@ class DashboardManager {
             this.confidenceValues = [];
             this.perclosValues = [];
             this.earHistory = [];
+            this.earLeftHistory = [];
+            this.earRightHistory = [];
             this.confidenceHistory = [];
             this.perclosHistory = [];
             this.timestamps = [];
+            this.lastResult = null;
+
+            // Reset chart x-axis window to start from now
+            const now = Date.now();
+            this.earChart.options.scales.x.min = now;
+            this.earChart.options.scales.x.max = now + 60000;
+            this.confidenceChart.options.scales.x.min = now;
+            this.confidenceChart.options.scales.x.max = now + 60000;
+            this.earChart.data.datasets.forEach(ds => { ds.data = []; });
+            this.confidenceChart.data.datasets.forEach(ds => { ds.data = []; });
 
             this.startBtn.disabled = true;
             this.stopBtn.disabled = false;
@@ -199,8 +243,13 @@ class DashboardManager {
 
     stop() {
         this.isMonitoring = false;
+        if (this.drawRaf) {
+            cancelAnimationFrame(this.drawRaf);
+            this.drawRaf = null;
+        }
         if (this.video.srcObject) {
             this.video.srcObject.getTracks().forEach(t => t.stop());
+            this.video.srcObject = null;
         }
         this.startBtn.disabled = false;
         this.stopBtn.disabled = true;
@@ -208,20 +257,29 @@ class DashboardManager {
         this.log('Monitoring stopped');
     }
 
+    // Runs at display refresh rate — draws the video frame then any overlay text
+    drawLoop = () => {
+        if (!this.isMonitoring) return;
+        if (this.video.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA) {
+            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+            if (this.lastResult) {
+                this.drawOverlay(this.lastResult);
+            }
+        }
+        this.drawRaf = requestAnimationFrame(this.drawLoop);
+    };
+
+    // Runs at 5 Hz — captures the current canvas frame and sends to the backend
     captureLoop = async () => {
         if (!this.isMonitoring) return;
 
         try {
-            // Capture frame
-            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
             const imageData = this.canvas.toDataURL('image/jpeg', 0.8);
 
-            // Send to backend every 200ms
             if (this.frameCount % 4 === 0) {
                 this.sendPredictionRequest(imageData);
             }
 
-            // Update FPS
             this.frameCount++;
             const now = Date.now();
             const elapsed = now - this.lastFrameTime;
@@ -236,7 +294,6 @@ class DashboardManager {
             this.log(`Capture error: ${err.message}`);
         }
 
-        // Request next frame (200ms interval)
         setTimeout(this.captureLoop, 200);
     };
 
@@ -261,7 +318,6 @@ class DashboardManager {
     }
 
     processPredictionResult(result) {
-        // Extract metrics from result
         const earLeft = result.ear_left || 0;
         const earRight = result.ear_right || 0;
         const mar = result.mar || 0;
@@ -269,45 +325,39 @@ class DashboardManager {
         const confidence = result.confidence || 0;
         const perclos = result.perclos || 0;
 
-        // Update display
         this.earLeftEl.textContent = earLeft.toFixed(3);
         this.earRightEl.textContent = earRight.toFixed(3);
         this.marEl.textContent = mar.toFixed(3);
         this.perclosEl.textContent = (perclos * 100).toFixed(1) + '%';
 
-        // Add to history
-        const timestamp = new Date().toLocaleTimeString();
+        const ts = Date.now();
+        this.timestamps.push(ts);
         this.earHistory.push(avgEar);
+        this.earLeftHistory.push(earLeft);
+        this.earRightHistory.push(earRight);
         this.confidenceHistory.push(confidence);
         this.perclosHistory.push(perclos);
-        this.timestamps.push(timestamp);
         this.confidenceValues.push(confidence);
         this.perclosValues.push(perclos);
 
-        // Keep history size in check
-        if (this.earHistory.length > this.maxHistorySize) {
+        if (this.timestamps.length > this.maxHistorySize) {
+            this.timestamps.shift();
             this.earHistory.shift();
+            this.earLeftHistory.shift();
+            this.earRightHistory.shift();
             this.confidenceHistory.shift();
             this.perclosHistory.shift();
-            this.timestamps.shift();
         }
 
-        // Update charts
+        this.lastResult = result;
         this.updateCharts();
-
-        // Determine alert status
         this.updateAlertStatus(avgEar, mar);
-
-        // Draw landmarks on canvas
-        this.drawOverlay(result);
     }
 
     updateAlertStatus(avgEar, mar) {
         let status = 'idle';
         let message = 'Alert monitoring active';
 
-        // Check for drowsiness or microsleep
-        const closedEyeCount = this.earHistory.filter(ear => ear < this.earThreshold).length;
         const recentFrames = Math.min(30, this.earHistory.length);
         const recentClosedCount = this.earHistory.slice(-recentFrames).filter(e => e < this.earThreshold).length;
 
@@ -341,30 +391,41 @@ class DashboardManager {
     }
 
     updateCharts() {
-        // Calculate threshold line
-        const thresholdLine = new Array(this.earHistory.length).fill(this.earThreshold);
+        const now = Date.now();
+        const windowMs = 60000;
 
-        this.earChart.data.labels = this.timestamps.slice(-60);
-        this.earChart.data.datasets[0].data = this.earHistory.slice(-60);
-        this.earChart.data.datasets[1].data = this.earHistory.slice(-60); // simplified for now
-        this.earChart.data.datasets[2].data = thresholdLine.slice(-60);
+        // Slide the x-axis window so recent data is always visible
+        this.earChart.options.scales.x.min = now - windowMs;
+        this.earChart.options.scales.x.max = now;
+        this.confidenceChart.options.scales.x.min = now - windowMs;
+        this.confidenceChart.options.scales.x.max = now;
+
+        // Build {x, y} point arrays for linear axis
+        const earLeftData  = this.timestamps.map((ts, i) => ({ x: ts, y: this.earLeftHistory[i] }));
+        const earRightData = this.timestamps.map((ts, i) => ({ x: ts, y: this.earRightHistory[i] }));
+        const thresholdData = [
+            { x: now - windowMs, y: this.earThreshold },
+            { x: now,            y: this.earThreshold }
+        ];
+        const confData = this.timestamps.map((ts, i) => ({ x: ts, y: this.confidenceHistory[i] }));
+
+        this.earChart.data.datasets[0].data = earLeftData;
+        this.earChart.data.datasets[1].data = earRightData;
+        this.earChart.data.datasets[2].data = thresholdData;
         this.earChart.update('none');
 
-        this.confidenceChart.data.labels = this.timestamps.slice(-60);
-        this.confidenceChart.data.datasets[0].data = this.confidenceHistory.slice(-60);
+        this.confidenceChart.data.datasets[0].data = confData;
         this.confidenceChart.update('none');
     }
 
     drawOverlay(result) {
-        // Simple overlay - can be enhanced with landmarks
-        this.ctx.fillStyle = 'rgba(0, 212, 255, 0.1)';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Draw metrics text
+        // Small dark box so the text is legible over any video background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(5, 5, 150, 65);
         this.ctx.fillStyle = '#00d4ff';
-        this.ctx.font = 'bold 16px "Courier New"';
-        this.ctx.fillText(`EAR: ${(result.ear_left || 0).toFixed(3)}`, 10, 30);
-        this.ctx.fillText(`MAR: ${(result.mar || 0).toFixed(3)}`, 10, 60);
+        this.ctx.font = 'bold 14px "Courier New"';
+        this.ctx.fillText(`EAR: ${(result.ear_left || 0).toFixed(3)}`, 12, 28);
+        this.ctx.fillText(`MAR: ${(result.mar || 0).toFixed(3)}`, 12, 52);
     }
 
     updateStatsLoop = () => {
@@ -377,13 +438,11 @@ class DashboardManager {
     updateStats() {
         if (!this.sessionStart) return;
 
-        // Duration
         const elapsed = Math.floor((Date.now() - this.sessionStart) / 1000);
         const minutes = Math.floor(elapsed / 60);
         const seconds = elapsed % 60;
         this.durationEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-        // Averages
         if (this.confidenceValues.length > 0) {
             const avgConf = this.confidenceValues.reduce((a, b) => a + b) / this.confidenceValues.length;
             this.avgConfidenceEl.textContent = (avgConf * 100).toFixed(1) + '%';
@@ -399,7 +458,6 @@ class DashboardManager {
         const time = new Date().toLocaleTimeString();
         const line = `[${time}] ${message}`;
         this.debugOutput.textContent = line + '\n' + this.debugOutput.textContent;
-        // Keep debug output limited
         const lines = this.debugOutput.textContent.split('\n');
         if (lines.length > 20) {
             this.debugOutput.textContent = lines.slice(0, 20).join('\n');
