@@ -56,7 +56,7 @@ RUN mkdir -p outputs/models outputs/plots outputs/logs \
 # Drop to non-root for all subsequent commands
 USER appuser
 
-EXPOSE 5000
+EXPOSE 7860
 
 # Docker health check — polls the liveness endpoint every 30 s
 HEALTHCHECK \
@@ -64,11 +64,11 @@ HEALTHCHECK \
     --timeout=10s  \
     --start-period=15s \
     --retries=3 \
-    CMD curl -fsS http://localhost:5000/health || exit 1
+    CMD curl -fsS http://localhost:7860/health || exit 1
 
 # gunicorn: 2 worker processes × 2 threads; logs to stdout/stderr for `docker logs`
 CMD ["gunicorn", \
-     "--bind",            "0.0.0.0:5000", \
+     "--bind",            "0.0.0.0:7860", \
      "--workers",         "2",            \
      "--threads",         "2",            \
      "--timeout",         "60",           \
