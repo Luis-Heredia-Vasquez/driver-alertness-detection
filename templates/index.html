@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver Alertness Detection Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Driver Alertness Monitoring</h1>
+            <div class="header-controls">
+                <button id="startBtn" class="btn btn-primary">Start Monitoring</button>
+                <button id="stopBtn" class="btn btn-secondary" disabled>Stop Monitoring</button>
+            </div>
+        </header>
+
+        <!-- Alert Banner -->
+        <div id="alertBanner" class="alert-banner alert-idle">
+            <div class="alert-content">
+                <span id="alertStatus" class="alert-status">IDLE</span>
+                <span id="alertMessage" class="alert-message">System ready</span>
+            </div>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class="main-grid">
+            <!-- Left: Webcam Feed -->
+            <div class="feed-section">
+                <div class="feed-container">
+                    <video id="webcam" class="webcam-feed" playsinline></video>
+                    <canvas id="overlay" class="webcam-overlay"></canvas>
+                    <div class="feed-status">
+                        <span id="fpsCounter" class="fps">FPS: --</span>
+                        <span id="frameCounter" class="frame-count">Frames: 0</span>
+                    </div>
+                </div>
+                <div class="metrics-panel">
+                    <div class="metric-row">
+                        <span class="metric-label">Left EAR:</span>
+                        <span id="earLeft" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Right EAR:</span>
+                        <span id="earRight" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">MAR:</span>
+                        <span id="mar" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">PERCLOS:</span>
+                        <span id="perclos" class="metric-value">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Charts & Stats -->
+            <div class="charts-stats-section">
+                <!-- Charts -->
+                <div class="charts-container">
+                    <div class="chart-wrapper">
+                        <h3 class="chart-title">Eye Aspect Ratio (EAR)</h3>
+                        <canvas id="earChart"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <h3 class="chart-title">Confidence Score</h3>
+                        <canvas id="confidenceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Stats Panel -->
+                <div class="stats-panel">
+                    <h3 class="stats-title">Session Statistics</h3>
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <span class="stat-label">Duration</span>
+                            <span id="sessionDuration" class="stat-value">00:00</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Alerts</span>
+                            <span id="alertCount" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Avg Confidence</span>
+                            <span id="avgConfidence" class="stat-value">--</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Avg PERCLOS</span>
+                            <span id="avgPerclos" class="stat-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Info -->
+        <div class="debug-panel">
+            <details>
+                <summary>Debug Info</summary>
+                <div id="debugOutput" class="debug-output"></div>
+            </details>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
